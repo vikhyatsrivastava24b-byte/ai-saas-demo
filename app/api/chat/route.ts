@@ -11,7 +11,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'API key is missing from Vercel' }, { status: 500 });
     }
 
-    // Using native fetch and the latest 2026 Gemini 3.5 Flash model
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`,
       {
@@ -19,19 +18,31 @@ export async function POST(req: Request) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: lastMessage }] }],
+          safetySettings: [
+            { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+          ]
         }),
       }
     );
 
     const data = await response.json();
 
-    // If Google rejects it, this will catch the exact error message
     if (!response.ok) {
       console.error('Google API Error:', data);
       return NextResponse.json({ error: data.error?.message || 'Google API error' }, { status: response.status });
     }
     
-    const replyText = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response received.';
+    const candidate = data.candidates?.[0];
+    
+    // Check if Google actively blocked the prompt
+    if (candidate && candidate.finishReason !== 'STOP') {
+      return NextResponse.json({ reply: `Response blocked by Google. Reason: ${candidate.finishReason}` });
+    }
+
+    const replyText = candidate?.content?.parts?.[0]?.text || 'No response received.';
     return NextResponse.json({ reply: replyText });
     
   } catch (error: any) {
